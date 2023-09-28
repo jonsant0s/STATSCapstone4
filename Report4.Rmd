@@ -1,0 +1,356 @@
+---
+title: "Classification of Cherry and Pear Leaves Using Bivariate Normal Distribution"
+author: ""
+date: "`r Sys.Date()`"
+output:
+  pdf_document: 
+    toc: yes
+---
+
+```{r, echo=FALSE}
+library("matlib")
+library("ggplot2")
+path.name = ""
+```
+
+# Abstract
+
+# Introduction
+
+The objective of this report is to establish a classification rule that utilizes the width and length of cherry and pear leaves to differentiate between the two species. The primary purpose of the report is to propose an efficient method for correctly classifying upcoming observations of cherry and pear leaves, based on their width and length. The report intends to offer a valuable tool for botanists who require to recognize cherry and pear leaves.
+
+# Data
+
+## Data Generation Process
+
+The data generation process involved obtaining digital copies of the PDFs containing the cherry and pear leaves. The measurements of length and width of the leaves were taken manually using Adobe Acrobat's built-in measuring tool, which allowed for measurements to be taken to the nearest millimeter. The data for each leaf, including its species and its measurements, were then manually entered into a csv file before being imported into R for analysis.
+
+(See Appendix A: Reading CSV and Outputting Data in R)
+
+```{r A, echo=FALSE}
+leafdata.df <- read.csv(path.name, header=TRUE)
+leafdata.A <- leafdata.df[1:16,-c(1,4)]
+knitr::kable(leafdata.A, caption="Width (X) and Length (Y) of Cherry Tree Leaves (Species A)")
+leafdata.B <- leafdata.df[17:32,-c(1,4)]
+knitr::kable(leafdata.B, caption="Width (X) and Length (Y) of Pear Tree Leaves (Species B)")
+```
+
+# Parameter Estimation
+
+$$
+f(x,y) = \frac{1}{2\pi\sqrt{|\Sigma|}}exp[-\frac{1}{2}\binom{x-\mu_x}{y-\mu_y}^T\Sigma^{-1}\binom{x-\mu_x}{y-\mu_y}]
+$$
+where $|\Sigma|$ is the determinant of the covariance matrix
+
+$$
+\Sigma=\binom{\sigma_x^2\space\sigma_{xy}}{\sigma_{xy}\space\sigma_y^2}
+$$
+(See Appendix B: Calculate Covariance Matrices of A and B and Calculating Pooled Estimate $\Sigma$)
+
+```{r B, echo=FALSE}
+cov_xyA = cov(leafdata.A)
+cov_xyB = cov(leafdata.B)
+knitr::kable(cov_xyA, caption="Covariance Matrix $\\Sigma_{A}$")
+knitr::kable(cov_xyB, caption="Covariance Matrix $\\Sigma_{B}$")
+cov_AB = (cov_xyA + cov_xyB)/2
+knitr::kable(cov_AB, caption="Pooled Estimate $\\Sigma$ by taking average of $\\Sigma_{A}$ and $\\Sigma_{B}$")
+```
+
+
+$$
+\Sigma_A=\left[
+\begin{matrix}
+86.97661&-49.29546\\
+-49.29546&	309.42234
+\end{matrix}\right]
+$$
+$$
+\Sigma_B=\left[
+\begin{matrix}
+19.22080&12.70669\\
+12.70669&86.01100
+\end{matrix}\right]
+$$
+
+$$
+\Sigma = \frac{(\Sigma_A+\Sigma_B)}{2}=\frac{\left[
+\begin{matrix}
+86.97661&-49.29546\\
+-49.29546&	309.42234
+\end{matrix}\right]+\left[
+\begin{matrix}
+19.22080&12.70669\\
+12.70669&86.01100
+\end{matrix}\right]}{2}=\left[
+\begin{matrix}
+53.09871&-18.29438\\
+-18.29438&197.71667
+\end{matrix}\right]
+$$
+(See Appendix C: R Function to Calculate Probability Density for Bivariate Normal Distribution)
+
+```{r C, echo=FALSE}
+f <- function(X,Y,x,y,cov){
+  mu_x = mean(X)
+  mu_y = mean(Y)
+  matrix_xy = matrix(c(x-mu_x,y-mu_y),2,1)
+  
+  part1 = 1/(2*pi*sqrt(det(cov)))
+  exp.value = t(matrix_xy)%*%inv(cov)%*%matrix_xy
+  part2 = exp((-1/2)*exp.value)
+  f = part1*part2
+  return(f[1])
+}
+
+classifyLeafType <- function(X.a,Y.a,X.b,Y.b,x,y,cov_AB){
+  f(X.a,Y.a,x,y,cov_AB)/f(X.b,Y.b,x,y,cov_AB)
+}
+```
+# Classification Rules
+
+We classify the leaf as species A (Cherry) if:
+
+$$
+\lambda = f_a(x,y)/f_b(x,y)>1,
+$$
+
+We classify the leaf as species B (Pear) if:
+
+$$
+\lambda = f_a(x,y)/f_b(x,y)<1,
+$$
+We classify the leaf as undetermined if:
+
+$$
+\lambda = f_a(x,y)/f_b(x,y)=1
+$$
+
+## Classifying Training Data Points
+
+(See Appendix D: R code for Classifying Training Data Points)
+
+```{r D, echo=FALSE}
+X.a = leafdata.A$Width
+Y.a = leafdata.A$Length
+X.b = leafdata.B$Width
+Y.b = leafdata.B$Length
+
+for(i in 1:32){
+  lambda = classifyLeafType(X.a,Y.a,X.b,Y.b,leafdata.df$Width[i],leafdata.df$Length[i],cov_AB)
+  leafdata.df$Lambda[i] = format(lambda,scientific=FALSE)
+  if(lambda>1){
+    leafdata.df$Classification[i]="A"
+  }
+  else if (lambda<1) {
+    leafdata.df$Classification[i]="B"
+  }
+  else {
+    leafdata.df$Classification[i]="U"
+  }
+}
+
+knitr::kable(leafdata.df,caption="Data Set After Running Classification Function for Each Row")
+InvalidRows<-data.frame()
+for(i in 1:32){
+  if(leafdata.df$Classification[i] != leafdata.df$Species[i]){
+    InvalidRows<-rbind(InvalidRows,data.frame(LeafNo=leafdata.df$LeafNo[i],Species=leafdata.df$Species[i],Classification=leafdata.df$Classification[i]))
+  }
+}
+knitr::kable(InvalidRows,caption="Classification Errors")
+```
+
+From the Table 7, we see that the classification rule incorrectly identifies the type of leaf it is. Species is the actual identification of the leaf.
+
+## Classifying New Leaves
+
+(See Appendix E: R code for Classifying New Leaves)
+
+```{r E, echo=FALSE}
+NewLeaves <- data.frame(Width=c(32,38,40),Length=c(82,52,76))
+knitr::kable(NewLeaves,caption="New Leaves")
+for(i in 1:dim(NewLeaves)[1]){
+  lambda = classifyLeafType(X.a,Y.a,X.b,Y.b,leafdata.df$Width[i],leafdata.df$Length[i],cov_AB)
+  NewLeaves$Lambda[i] = format(lambda,scientific=FALSE)
+  if(lambda>1){
+    NewLeaves$Classification[i]="A"
+  }
+  else if (lambda<1) {
+    NewLeaves$Classification[i]="B"
+  }
+  else {
+    NewLeavesf$Classification[i]="U"
+  }
+}
+knitr::kable(NewLeaves, caption="New Leaves After Classification")
+```
+# Plotting Decision Boundary
+
+To plot the decision boundary line:
+
+\begin{itemize}
+\item Created a new set of data points containing a sequence of random numbers within the range of the original training data values
+\item Run the classifyLeafType() function in R to generate results in to a vector.
+\item Plot the vector on the observation space
+\end{itemize}
+
+(See Appendix F: Plot Straight Line for Classification Rule)
+
+```{r F, echo=FALSE}
+leaf.df <- leafdata.df[1:32,c(2:4)]
+
+N.dimensions <- 300
+X.space <- seq(from = min(leaf.df$Width), to = max(leaf.df$Width), length.out = N.dimensions)
+Y.space <- seq(from = min(leaf.df$Length), to = max(leaf.df$Length), length.out = N.dimensions)
+Observation.space <- expand.grid(Width = X.space, Length = Y.space)
+
+predict.values<- c()
+for(i in 1:(N.dimensions^2)){
+  lambda = classifyLeafType(X.a,Y.a,X.b,Y.b,Observation.space[i,1],Observation.space[i,2],cov_AB)
+  if (lambda >1){
+    predict.values <- append(predict.values,1)
+  } else {
+    predict.values <- append(predict.values,2)
+  }
+}
+length(predict.values)
+plot(leaf.df[, 1:2], col = c(4,2)[as.factor(leaf.df$Species)]); contour(x = X.space, y = Y.space, z = matrix(predict.values, nrow = N.dimensions, ncol = N.dimensions),levels = c(1, 2), add = TRUE, drawlabels = FALSE,col=3)
+```
+
+## New Classification Rule
+
+Now, we suppose that the covariance matrix $\Sigma$ is not the same for both species. 
+
+Then we can use the same values of $\Sigma_A$ and $\Sigma_B$ defined from the previous section:
+
+$$
+\Sigma_A=\left[
+\begin{matrix}
+86.97661&-49.29546\\
+-49.29546&	309.42234
+\end{matrix}\right]
+$$
+
+$$
+\Sigma_B=\left[
+\begin{matrix}
+19.22080&12.70669\\
+12.70669&86.01100
+\end{matrix}\right]
+$$
+
+Then we can define the new classification rule as:
+
+$$
+f_a(x,y)/f_b(x,y)
+$$
+Where
+
+$$
+f_A(x,y) = \frac{1}{2\pi\sqrt{|\Sigma|}}exp[-\frac{1}{2}\binom{x-\mu_x}{y-\mu_y}^T\Sigma_A^{-1}\binom{x-\mu_x}{y-\mu_y}]
+$$
+
+$$
+f_B(x,y) = \frac{1}{2\pi\sqrt{|\Sigma|}}exp[-\frac{1}{2}\binom{x-\mu_x}{y-\mu_y}^T\Sigma_B^{-1}\binom{x-\mu_x}{y-\mu_y}]
+$$
+
+Then like the previous classification:
+
+We classify the leaf as species A (Cherry) if:
+
+$$
+\lambda = f_a(x,y)/f_b(x,y)>1,
+$$
+
+We classify the leaf as species B (Pear) if:
+
+$$
+\lambda = f_a(x,y)/f_b(x,y)<1,
+$$
+We classify the leaf as undetermined if:
+
+$$
+\lambda = f_a(x,y)/f_b(x,y)=1
+$$
+
+To plot the new decision boundary line:
+
+\begin{itemize}
+\item Created a new set of data points containing a sequence of random numbers within the range of the original training data values
+\item Run the classifyLeafType() function in R to generate results in to a vector.
+\item Plot the vector on the observation space
+\end{itemize}
+
+
+
+(See Appendix G: Plot Straight Line for New Classification Rule)
+```{r G, echo=FALSE}
+classifyLeafType.new <- function(X.a,Y.a,X.b,Y.b,x,y,cov_A,cov_B){
+  f(X.a,Y.a,x,y,cov_A)/f(X.b,Y.b,x,y,cov_B)
+}
+
+for(i in 1:32){
+  lambda = classifyLeafType.new(X.a,Y.a,X.b,Y.b,leafdata.df$Width[i],leafdata.df$Length[i],cov_xyA,cov_xyB)
+  leafdata.df$LambdaNew[i] = format(lambda,scientific=FALSE)
+  if(lambda>1){
+    leafdata.df$ClassificationNew[i]="A"
+  }
+  else if (lambda<1) {
+    leafdata.df$ClassificationNew[i]="B"
+  }
+  else {
+    leafdata.df$ClassificationNew[i]="U"
+  }
+}
+
+knitr::kable(leafdata.df,caption="New Classification Values Under ClassifcationNew Column")
+
+predict.values1<- c()
+for(i in 1:(N.dimensions^2)){
+  lambda1 = classifyLeafType.new(X.a,Y.a,X.b,Y.b,Observation.space[i,1],Observation.space[i,2],cov_xyA,cov_xyB)
+  if (lambda1 >1){
+    predict.values1 <- append(predict.values1,1)
+  } else {
+    predict.values1 <- append(predict.values1,2)
+  }
+}
+length(predict.values1)
+plot(leaf.df[, 1:2], col = c(4,2)[as.factor(leaf.df$Species)]); contour(x = X.space, y = Y.space, z = matrix(predict.values, nrow = N.dimensions, ncol = N.dimensions),levels = c(1, 2), add = TRUE, drawlabels = FALSE,col=3); contour(x = X.space, y = Y.space, z = matrix(predict.values1, nrow = N.dimensions, ncol = N.dimensions),levels = c(1, 2), add = TRUE, drawlabels = FALSE,col=5)
+```
+
+
+# Conclusion
+
+To summarize, the study has effectively established a classification rule to differentiate cherry and pear leaves using their width and length measurements. The findings revealed clear variations between the length and width measurements of the cherry and pear leaves, enabling the development of a straightforward and efficient classification rule.
+
+In conclusion, the proposed classification rule provides an uncomplicated and precise approach to differentiate cherry and pear leaves based on their dimensions. The study's outcomes may have implications for researchers and practitioners in the field of botany, and anyone who needs to differentiate between these two species.
+
+# Appendix
+
+## Appendix A: Reading CSV and Outputting Data in R
+```{r ref.label="A", eval=FALSE}
+```
+
+## Appendix B: Calculate Covariance Matrices of A and B and Calculating Pooled Estimate $\Sigma$
+```{r ref.label="B", eval=FALSE}
+```
+
+## Appendix C: R Function to Calculate Probability Density for Bivariate Normal Distribution
+```{r ref.label="C", eval=FALSE}
+```
+
+## Appendix D: R code for Classifying Training Data Points
+```{r ref.label="D", eval=FALSE}
+```
+
+## Appendix E: R code for Classifying New Leaves
+```{r ref.label="E", eval=FALSE}
+```
+
+## Appendix F: Plot Straight Line for Classification Rule
+```{r ref.label="F", eval=FALSE}
+```
+
+## Appendix G: Plot Straight Line for New Classification Rule
+```{r ref.label="G", eval=FALSE}
+```
+
